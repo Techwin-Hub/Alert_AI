@@ -39,14 +39,6 @@ SURVEILLANCE_MODULES = [
         'alert_count': 1
     },
     {
-        'id': 'loitering-detection',
-        'title': 'Loitering Detection',
-        'icon': 'fa-walking',
-        'description': 'Suspicious behavior and lingering detection',
-        'status': 'safe',
-        'alert_count': 0
-    },
-    {
         'id': 'fire-smoke',
         'title': 'Fire/Smoke Detection',
         'icon': 'fa-fire',
