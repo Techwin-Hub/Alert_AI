@@ -41,13 +41,25 @@
         </div>
         
         <div class="card-body">
-            <!-- Live Preview Section -->
-            <div class="preview-section">
+            <!-- Live Preview Section / File Upload Section -->
+            <div class="preview-section" id="preview-section-{{ module.id }}">
                 <div class="placeholder-preview">
                     <i class="fas fa-video fa-3x"></i>
                     <p>Live Video Feed</p>
                     <small>{{ module.description }}</small>
                 </div>
+                {% if module.id in ['ppe-detection', 'fire-smoke', 'weapon-detection'] %}
+                <div class="file-upload-section" id="file-upload-{{ module.id }}" style="display: none;">
+                    <input type="file" class="form-control form-control-sm mb-2" name="file" accept="image/*,video/*">
+                    <button class="btn btn-success btn-sm w-100" onclick="uploadFile('{{ module.id }}')">
+                        <i class="fas fa-upload me-1"></i>Upload and Detect
+                    </button>
+                    <div class="detection-results-preview mt-2" id="results-preview-{{ module.id }}">
+                        <!-- Detection results will be shown here -->
+                        <small class="text-muted">Upload an image or video to see detection results.</small>
+                    </div>
+                </div>
+                {% endif %}
             </div>
             
             <!-- Stats Section -->
@@ -225,8 +237,101 @@ function viewLogs(moduleId) {
 
 // Live view function
 function liveView(moduleId) {
-    showNotification(`Opening live view for ${moduleId}`, 'info');
-    // Here you would typically open a modal with live video feed
+    const targetedModules = ['ppe-detection', 'fire-smoke', 'weapon-detection'];
+    if (targetedModules.includes(moduleId)) {
+        const fileUploadSection = document.getElementById(`file-upload-${moduleId}`);
+        const previewSection = document.getElementById(`preview-section-${moduleId}`);
+        const placeholderPreview = previewSection.querySelector('.placeholder-preview');
+
+        if (fileUploadSection) {
+            const isHidden = fileUploadSection.style.display === 'none';
+            fileUploadSection.style.display = isHidden ? 'block' : 'none';
+            placeholderPreview.style.display = isHidden ? 'none' : 'flex'; // Or 'block' if it was originally block
+
+            if(isHidden) {
+                 showNotification(`File upload for ${moduleId} enabled.`, 'info');
+            } else {
+                 showNotification(`File upload for ${moduleId} disabled.`, 'info');
+            }
+        }
+    } else {
+        showNotification(`Opening live view for ${moduleId}`, 'info');
+        // Standard live view for other modules (e.g., open a modal with live video feed)
+    }
+}
+
+// Upload file function
+function uploadFile(moduleId) {
+    const fileInput = document.querySelector(`#file-upload-${moduleId} input[type="file"]`);
+    const file = fileInput.files[0];
+    const resultsPreview = document.getElementById(`results-preview-${moduleId}`);
+
+    if (!file) {
+        showNotification('Please select a file to upload.', 'warning');
+        return;
+    }
+
+    resultsPreview.innerHTML = '<div class="spinner-border spinner-border-sm text-primary" role="status"><span class="visually-hidden">Loading...</span></div> Processing...';
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    fetch(`/api/detect/${moduleId}`, {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => {
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        return response.json();
+    })
+    .then(data => {
+        resultsPreview.innerHTML = ''; // Clear previous results or spinner
+
+        const resultCard = document.createElement('div');
+        resultCard.className = 'card shadow-sm';
+
+        let content = `<div class="card-body">`;
+        content += `<h6 class="card-title text-primary">Detection Results for ${moduleId}</h6>`;
+
+        if (data.error) {
+            content += `<p class="text-danger">${data.error}</p>`;
+        } else {
+            const timestamp = new Date(data.timestamp).toLocaleString();
+            content += `<p class="card-text mb-1"><small class="text-muted">Timestamp: ${timestamp}</small></p>`;
+
+            if (data.image_url) {
+                const imgElement = document.createElement('img');
+                imgElement.src = data.image_url;
+                imgElement.className = 'img-fluid rounded mb-2';
+                imgElement.style.maxHeight = '200px';
+                resultsPreview.appendChild(imgElement); // Prepend image so it appears above text
+            }
+
+            if (data.detections && data.detections.length > 0) {
+                content += '<ul class="list-group list-group-flush">';
+                data.detections.forEach(det => {
+                    content += `<li class="list-group-item d-flex justify-content-between align-items-center">
+                                    ${det.label}
+                                    <span class="badge bg-info rounded-pill">${(det.confidence * 100).toFixed(2)}%</span>
+                                </li>`;
+                });
+                content += '</ul>';
+            } else {
+                content += '<p class="text-muted">No detections found.</p>';
+            }
+        }
+        content += `</div>`;
+        resultCard.innerHTML = content;
+        resultsPreview.appendChild(resultCard);
+        showNotification(`Detection complete for ${moduleId}`, 'success');
+    })
+    .catch(error => {
+        console.error('Error uploading file:', error);
+        resultsPreview.innerHTML = `<p class="text-danger">Error processing file: ${error.message}. Please try again.</p>`;
+        showNotification(`Error processing file for ${moduleId}`, 'danger');
+    });
 }
 
 // Show notification
