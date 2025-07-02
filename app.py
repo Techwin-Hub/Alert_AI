@@ -3,6 +3,8 @@ from flask import Flask, render_template, jsonify, request, send_from_directory
 from datetime import datetime
 import random
 import uuid # For generating unique filenames
+from ultralytics import YOLO
+from PIL import Image
 
 app = Flask(__name__)
 UPLOAD_FOLDER = 'uploads'
@@ -133,37 +135,73 @@ def detect_objects(module_id):
         return jsonify({'error': 'No selected file'}), 400
 
     if file and allowed_file(file.filename):
-        # Create a unique filename to prevent overwrites and for security
         ext = file.filename.rsplit('.', 1)[1].lower()
         unique_filename = f"{uuid.uuid4()}.{ext}"
         filepath = os.path.join(app.config['UPLOAD_FOLDER'], unique_filename)
         file.save(filepath)
 
-        # --- Placeholder for Model Inference ---
-        # model_path_for_module = MODEL_PATHS[module_id]
-        # For example, using a dummy processing step:
-        # results = run_model_inference(filepath, model_path_for_module)
-        # For now, simulate results:
-
+        # Load model
+        model = YOLO(MODEL_PATHS[module_id])
         detections = []
-        if module_id == 'ppe-detection':
-            detections = [
-                {'label': 'Helmet', 'confidence': random.uniform(0.7, 0.99), 'box': [10, 20, 50, 60]},
-                {'label': 'Vest', 'confidence': random.uniform(0.6, 0.95), 'box': [70, 80, 120, 150]}
-            ]
-        elif module_id == 'fire-smoke':
-            detections = [
-                {'label': 'Smoke', 'confidence': random.uniform(0.75, 0.98), 'box': [30, 40, 80, 100]}
-            ]
-        elif module_id == 'weapon-detection':
-             detections = [
-                {'label': 'Handgun', 'confidence': random.uniform(0.8, 0.99), 'box': [50, 50, 100, 100]}
-            ]
+        is_video = ext in ['mp4', 'avi', 'mov']
 
-        # In a real app, you'd process the image (e.g., draw bounding boxes),
-        # save a new version with detections, and return its URL.
-        # For this example, we'll just return the URL of the *original* uploaded file.
-        processed_image_url = f'/uploads/{unique_filename}'
+        if is_video:
+            # --- Video Handling ---
+            import cv2
+
+            cap = cv2.VideoCapture(filepath)
+            width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+            height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+            fps = cap.get(cv2.CAP_PROP_FPS)
+
+            result_filename = unique_filename.replace('.', '_result.')
+            result_path = os.path.join(app.config['UPLOAD_FOLDER'], result_filename)
+            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+            out = cv2.VideoWriter(result_path, fourcc, fps, (width, height))
+
+            while cap.isOpened():
+                ret, frame = cap.read()
+                if not ret:
+                    break
+
+                results = model(frame)[0]
+
+                for box in results.boxes:
+                    cls_id = int(box.cls[0])
+                    label = model.names[cls_id]
+                    conf = float(box.conf[0])
+                    x1, y1, x2, y2 = map(int, box.xyxy[0])
+                    cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 0, 255), 2)
+                    cv2.putText(frame, f"{label} ({conf:.2f})", (x1, y1 - 10),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+
+                    detections.append({
+                        'label': label,
+                        'confidence': conf,
+                        'box': [x1, y1, x2, y2]
+                    })
+
+                out.write(frame)
+
+            cap.release()
+            out.release()
+            processed_image_url = f'/uploads/{os.path.basename(result_path)}'
+
+        else:
+            # --- Image Handling ---
+            results = model(filepath)
+            result_img_path = filepath.replace('.', '_result.')
+            results[0].save(filename=result_img_path)
+            processed_image_url = f'/uploads/{os.path.basename(result_img_path)}'
+
+            for box in results[0].boxes:
+                class_id = int(box.cls[0])
+                label = model.names[class_id]
+                detections.append({
+                    'label': label,
+                    'confidence': float(box.conf[0]),
+                    'box': box.xyxy[0].tolist()
+                })
 
         return jsonify({
             'message': 'File processed successfully',
@@ -180,5 +218,5 @@ def detect_objects(module_id):
 def uploaded_file(filename):
     return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
 
-if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=5000)
+if __name__ == "__main__":
+    app.run(debug=True)

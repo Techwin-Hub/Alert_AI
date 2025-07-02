@@ -302,11 +302,27 @@ function uploadFile(moduleId) {
             content += `<p class="card-text mb-1"><small class="text-muted">Timestamp: ${timestamp}</small></p>`;
 
             if (data.image_url) {
-                const imgElement = document.createElement('img');
-                imgElement.src = data.image_url;
-                imgElement.className = 'img-fluid rounded mb-2';
-                imgElement.style.maxHeight = '200px';
-                resultsPreview.appendChild(imgElement); // Prepend image so it appears above text
+                const isVideo = data.image_url.toLowerCase().endsWith('.mp4') || 
+                                data.image_url.toLowerCase().endsWith('.avi') || 
+                                data.image_url.toLowerCase().endsWith('.mov');
+
+                if (isVideo) {
+                    const videoElement = document.createElement('video');
+                    videoElement.controls = true;
+                    videoElement.className = 'w-100 mb-2 rounded';
+                    videoElement.style.maxHeight = '300px';
+                    const source = document.createElement('source');
+                    source.src = data.image_url;
+                    source.type = 'video/mp4'; // adjust if needed
+                    videoElement.appendChild(source);
+                    resultsPreview.appendChild(videoElement);
+                } else {
+                    const imgElement = document.createElement('img');
+                    imgElement.src = data.image_url;
+                    imgElement.className = 'img-fluid rounded mb-2';
+                    imgElement.style.maxHeight = '300px';
+                    resultsPreview.appendChild(imgElement);
+                }
             }
 
             if (data.detections && data.detections.length > 0) {
